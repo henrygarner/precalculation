@@ -4,7 +4,7 @@ module ActiveRecord
     class Field
       attr_accessor :column, :column_alias, :options
       def initialize(column, options={})
-        @column_alias = options.delete :as
+        @column_alias = options.delete :alias
         @column, @options = column, options.reverse_merge(:limit => column.limit, :precision => column.precision, :scale => column.scale)
       end
       def select_sql(data_source = nil)
@@ -75,7 +75,7 @@ module ActiveRecord
         return unless source # Bail with nil if we can't see a way to generate SQL from the data_source
         
         if operator == :avg
-          return unless counter = data_source.operations.detect { |field| field.operator == :count }
+          return unless counter = data_source.counters.first
           case source.operator
             when :sum then "SUM(#{source.column_alias}) / SUM(#{counter.column_alias}) AS #{column_alias}"
             when :avg then "SUM(#{source.column_alias} * #{counter.column_alias}) / SUM(#{counter.column_alias}) AS #{column_alias}"
@@ -98,7 +98,7 @@ module ActiveRecord
     class Counter
       attr_accessor :options
       def initialize(options = {})
-        @column_alias = options.delete :as
+        @column_alias = options.delete :alias
         @options = options
       end
       
@@ -186,12 +186,17 @@ module ActiveRecord
       end # unless ActiveRecord::Base.connection.table_exists?(table_name)
 
       source_table_name = (data_source || active_record).table_name
-
+      
+      
+      source_fields = fields.collect { |field| field.select_sql(data_source) }
+      destination_fields = fields.collect(&:column_alias)
+      group = fields.collect(&:group_sql).compact
+      
       sql = <<-eov
-      INSERT INTO #{table_name} (#{fields.collect(&:column_alias).join(', ')})
-      SELECT #{fields.collect { |field| field.select_sql(data_source) }.join(', ')}
+      INSERT INTO #{table_name} (#{destination_fields.join(', ')})
+      SELECT #{source_fields.join(', ')}
       FROM #{source_table_name}
-      GROUP BY #{fields.collect(&:group_sql).compact.join(', ')}
+      #{"GROUP BY #{group.join(', ')}" unless group.empty?}
       eov
       
       puts  sql + "\n"
