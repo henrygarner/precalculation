@@ -7,20 +7,11 @@ module ActiveRecord
         @column_alias = options.delete :alias
         @column, @options = column, options.reverse_merge(:limit => column.limit, :precision => column.precision, :scale => column.scale)
       end
-      def select_sql(data_source = nil)
-        column_name
-      end
-      def group_sql
-        column_name
-      end
       def column_name
         @column.name
       end     
       def type
         @column.type
-      end
-      def limit
-        @column.limit
       end
     end
     
