@@ -111,6 +111,7 @@ module ActiveRecord
     end
     
     class << self
+      attr_accessor :conditions, :contingent_column_names
       def calculate(table_name, &block)
         calculations << returning(self.new(table_name, &block)) do |obj|
           yield obj
@@ -121,7 +122,10 @@ module ActiveRecord
         @calculations ||= []
       end
       
-      def run!
+      def run!(conditions)
+        @conditions = conditions
+        @contingent_column_names = conditions.scan(Regexp.new("(#{active_record.column_names.join('|')})", true)).flatten
+        
         calculations.sort { |one,another| one.phase <=> another.phase }.each(&:run!)
       end
     end
@@ -167,33 +171,8 @@ module ActiveRecord
       end.min { |one,another| one.dimensions.size <=> another.dimensions.size }
     end
     
-    def run!
-      ActiveRecord::Base.connection.execute "DROP TABLE #{table_name}" if ActiveRecord::Base.connection.table_exists?(table_name)
-      
-      ActiveRecord::Base.connection.create_table table_name, :id => false do |t|
-        fields.each do |field|
-          t.column field.column_alias, field.type, field.options
-        end
-      end # unless ActiveRecord::Base.connection.table_exists?(table_name)
-
-      source_table_name = (data_source || active_record).table_name
-      
-      
-      source_fields = fields.collect { |field| field.select_sql(data_source) }
-      destination_fields = fields.collect(&:column_alias)
-      group = fields.collect(&:group_sql).compact
-      
-      sql = <<-eov
-      INSERT INTO #{table_name} (#{destination_fields.join(', ')})
-      SELECT #{source_fields.join(', ')}
-      FROM #{source_table_name}
-      #{"GROUP BY #{group.join(', ')}" unless group.empty?}
-      eov
-      
-      puts  sql + "\n"
-      
-      ActiveRecord::Base.connection.execute sql
-      
+    def phase
+      data_source ? (data_source.phase + 1) : 1
     end
     
     %w(counter operation dimension).each do |field|
@@ -204,11 +183,43 @@ module ActiveRecord
       EOV
     end
     
-    def phase
-      data_source ? (data_source.phase + 1) : 1
+    def run!
+      active_record.transaction do
+        if Base.connection.table_exists?(table_name)
+          prepare_table
+        else
+          create_table
+        end
+
+        source_table_name   = (data_source || active_record).table_name      
+        source_fields       = fields.collect { |field| field.select_sql(data_source) }
+        destination_fields  = fields.collect(&:column_alias)
+        group_fields        = fields.collect(&:group_sql).compact
+      
+        sql = ["INSERT INTO #{table_name} (#{destination_fields.join(', ')})"]
+        sql<< "SELECT #{source_fields.join(', ')} FROM #{source_table_name}"
+        sql<< "WHERE #{self.class.conditions}" if apply_conditions?
+        sql<< "GROUP BY #{group_fields.join(', ')}" unless group_fields.empty?
+      
+        Base.connection.execute sql.join("\n")
+      end
     end
     
-    protected
+    private
+    
+    def apply_conditions?
+      @apply_conditions ||= (self.class.contingent_column_names - dimensions.collect(&:column_name)).empty?
+    end
+    
+    def prepare_table
+      Base.connection.execute apply_conditions? ? "DELETE FROM #{table_name} WHERE #{self.class.conditions}" : "TRUNCATE TABLE #{table_name}"
+    end
+    
+    def create_table
+      Base.connection.create_table table_name, :id => false do |t|
+        fields.each { |field| t.column field.column_alias, field.type, field.options }
+      end
+    end
     
     def method_missing(method_id, *args)
       if active_record.column_names.include? method_id.to_s
@@ -226,12 +237,12 @@ module ActiveRecord
       
       attr_accessor :precalculations
       
-      def precalculate(precalculations_path)
+      def precalculate(precalculations_path, conditions)
         files = Dir["#{precalculations_path}/*.rb"]
         files.collect do |file|
           load(file)
           precalculation = file.match(/([_a-z0-9]*).rb/)[1].classify.constantize
-          precalculation.run!
+          precalculation.run!(conditions)
         end
       end
     
