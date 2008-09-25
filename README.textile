@@ -1,0 +1,67 @@
+h2. Description
+
+Mechanism for managing and populating an aggregate table stack to speed up ActiveRecord calculation queries on large datasets
+
+h2. Install
+
+<pre>
+	<code>
+		git clone git://github.com/henrygarner/calculation.git vendor/plugins/calculation
+	</code>
+</pre>
+
+h2. Usage
+
+<pre>
+	<code>
+		ruby script/generate precalculation [activerecord_class_name]
+	</code>
+</pre>
+
+This will create the db/precalculation directory and a boilerplate class inheriting from ActiveRecord::Precalculation.
+
+Next, define your calculations. You can define as many as you wish.
+
+<pre>
+	<code>
+		# Defines an aggregate table called 'your_aggregate_table' with 6 columns
+		# where dimension1 - 3 are the columns in your ActiveRecord::Base subclass
+		# you are aggregating by. Final 3 columns define the calculations you
+		# wish you perform where fact1 + 2 are the columns in your ActiveRecord::Base
+		# subclass you wish to calculate on. Counter provides a simple star count.
+		
+		calculate 'your_aggregate_table' do |t|
+		  t.[dimension1]
+		  t.[dimension2]
+		  t.[dimension3]
+		  t.sum :[fact1]
+		  t.avg :[fact1]
+		  t.counter
+		end
+	</code>
+</pre>
+
+Next, run your calculations.
+
+<pre>
+	<code>
+		rake db:precalculate
+	</code>
+</pre>
+
+You can run your calculations with conditions if you only need to refresh a subset of your data.
+
+<pre>
+	<code>
+		rake db:precalculate["date_dimension >= '2008-01-01 00:00:00'"]
+	</code>
+</pre>
+
+
+h3. Author
+
+"Henry Garner":http://www.quantedit.com
+
+h3. Licence
+
+"MIT":http://www.opensource.org/licenses/mit-license.php

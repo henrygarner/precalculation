@@ -20,7 +20,7 @@ module ActiveRecord
       def select_sql(data_source = nil)
         return "#{column_name}#{ " AS #{column_alias}" if column_name != column_alias }" unless data_source
         if source = source_column(data_source)
-          "#{source.column_alias} AS #{column_alias}"
+          "#{source.column_alias}#{ " AS #{column_alias}" if source.column_alias != column_alias }"
         end
       end
       
@@ -124,7 +124,7 @@ module ActiveRecord
       
       def run!(conditions)
         @conditions = conditions
-        @contingent_column_names = conditions.scan(Regexp.new("(#{active_record.column_names.join('|')})", true)).flatten
+        @contingent_column_names = conditions.to_s.scan(Regexp.new("(#{active_record.column_names.join('|')})", true)).flatten
         
         calculations.sort { |one,another| one.phase <=> another.phase }.each(&:run!)
       end
@@ -208,7 +208,7 @@ module ActiveRecord
     private
     
     def apply_conditions?
-      @apply_conditions ||= (self.class.contingent_column_names - dimensions.collect(&:column_name)).empty?
+      @apply_conditions ||= self.class.conditions and (self.class.contingent_column_names - dimensions.collect(&:column_name)).empty?
     end
     
     def prepare_table
@@ -216,6 +216,7 @@ module ActiveRecord
     end
     
     def create_table
+      @apply_conditions = false
       Base.connection.create_table table_name, :id => false do |t|
         fields.each { |field| t.column field.column_alias, field.type, field.options }
       end

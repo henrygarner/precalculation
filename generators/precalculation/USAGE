@@ -1,1 +1,12 @@
-Hi there, thanks for stopping by
+Description:
+    Stubs out a new ActiveRecord::Base precalculation class.
+    Pass the model name either CamelCased or under_scored.
+
+    This generates a precalculation class in db/precalculation.
+
+Example:
+    `./script/generate precalculation MyModel`
+
+    creates a Precalculation class:
+        db/precalculation/my_model_precalculation.rb
+
