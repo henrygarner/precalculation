@@ -6,7 +6,7 @@ h2. Install
 
 <pre>
 	<code>
-		git clone git://github.com/henrygarner/precalculation.git vendor/plugins/calculation
+		git clone git://github.com/henrygarner/precalculation.git vendor/plugins/precalculation
 	</code>
 </pre>
 
