@@ -1,12 +1,12 @@
 h2. Description
 
-Mechanism for managing and populating an aggregate table stack to speed up ActiveRecord calculation queries on large datasets
+Precalculation is a Ruby on Rails plugin that defines a mechanism for managing and populating an aggregate table stack to speed up ActiveRecord calculation queries on large datasets.
 
 h2. Install
 
 <pre>
 	<code>
-		git clone git://github.com/henrygarner/calculation.git vendor/plugins/calculation
+		git clone git://github.com/henrygarner/precalculation.git vendor/plugins/calculation
 	</code>
 </pre>
 
@@ -24,19 +24,28 @@ Next, define your calculations. You can define as many as you wish.
 
 <pre>
 	<code>
-		# Defines an aggregate table called 'your_aggregate_table' with 6 columns
-		# where dimension1 - 3 are the columns in your ActiveRecord::Base subclass
-		# you are aggregating by. Final 3 columns define the calculations you
-		# wish you perform where fact1 + 2 are the columns in your ActiveRecord::Base
-		# subclass you wish to calculate on. Counter provides a simple star count.
+		# Defined in db/precalculation/my_model_precalculation.rb
 		
-		calculate 'your_aggregate_table' do |t|
-		  t.[dimension1]
-		  t.[dimension2]
-		  t.[dimension3]
-		  t.sum :[fact1]
-		  t.avg :[fact1]
-		  t.counter
+		class MyModelPrecalculation < ActiveRecord::Precalculation
+		
+			# Defines an aggregate table called 'aggregate_table' with 6 columns.
+			# dimension1 - dimension3 are columns in the ActiveRecord::Base subclass
+			# you want to aggregate by.
+			# The final three columns define the calculations you wish you perform 
+			# where fact1 and fact2 are columns in the ActiveRecord::Base subclass
+			# you wish to calculate on. Counter provides a simple star count which 
+			# can enable subsequent calculations to use this table as their data source.
+		
+			calculate 'aggregate_table' do |t|
+			  t.dimension1
+			  t.dimension2
+			  t.dimension3
+			  t.sum :fact1
+			  t.avg :fact2
+			  t.counter
+			end
+			
+			# Further calculations ...
 		end
 	</code>
 </pre>
@@ -57,6 +66,13 @@ You can run your calculations with conditions if you only need to refresh a subs
 	</code>
 </pre>
 
+h2. Behind the scenes...
+
+Before executing any of the defined calculations, the Precalculation module will examine them and try to figure out in which order they should be executed. If all the data for one calculation (A) can be accurately determined from the output of another (B), B will be executed first and A will take B as its data source.
+
+h2. TODO
+
+Educate ActiveRecord::Base about how to use the aggregate table stack when calculate is called on one of its subclasses.
 
 h3. Author
 
