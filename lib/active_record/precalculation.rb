@@ -1,9 +1,11 @@
 module ActiveRecord
   class Precalculation
+
     
     class Field
       attr_accessor :column, :column_alias, :options
       def initialize(column, options={})
+        puts "Initializing: #{self.inspect}"
         @column_alias = options.delete :alias
         @column, @options = column, options.reverse_merge(:limit => column.limit, :precision => column.precision, :scale => column.scale)
       end
@@ -46,7 +48,7 @@ module ActiveRecord
       attr_accessor :operator
       
       def initialize(operator, column, options = {})
-        @operator = operator
+        @operator = operator.to_sym
         super(column, options)
       end
       
@@ -128,11 +130,26 @@ module ActiveRecord
         
         calculations.sort { |one,another| one.phase <=> another.phase }.each(&:run!)
       end
+      
+      def inherited(child)
+        (@subclasses ||= []) << child
+      end
+      
+      def defined_for(active_record)
+        @subclasses.detect { |child| child.active_record == active_record }
+      end
+      
+      def results(*args)
+        request = self.new
+        args.flatten.each { |from_token| request.field_factory from_token }
+        active_record.find_by_sql request.to_sql
+      end
+      
     end
     
     attr_accessor :table_name, :fields
 
-    def initialize(table_name)
+    def initialize(table_name = nil)
       @table_name = table_name
     end
     
@@ -143,12 +160,13 @@ module ActiveRecord
     %w(sum min max avg).each do |operation|
       class_eval <<-EOV
         def #{operation}(column_name, options = {})
-          fields << Operation.new(:#{operation}, active_record.columns_hash[column_name.to_s], options)
+          field_factory("#{operation}_\#\{column_name\}", options)
         end
       EOV
     end
+    
     def counter(options = {})
-      fields << Counter.new(options)
+      field_factory(:counter, options)
     end
     alias_method :count, :counter
     
@@ -185,23 +203,27 @@ module ActiveRecord
     
     def run!
       active_record.transaction do
-        if Base.connection.table_exists?(table_name)
-          prepare_table
-        else
-          create_table
-        end
-
-        source_table_name   = (data_source || active_record).table_name      
-        source_fields       = fields.collect { |field| field.select_sql(data_source) }
-        destination_fields  = fields.collect(&:column_alias)
-        group_fields        = fields.collect(&:group_sql).compact
+        Base.connection.table_exists?(table_name) ? prepare_table! : create_table!
+        Base.connection.execute "INSERT INTO #{table_name} (#{fields.collect(&:column_alias).join(', ')})\n#{self.to_sql}"
+      end
+    end
+    
+    def to_sql
+      source_table_name   = (data_source || active_record).table_name      
+      source_fields       = fields.collect { |field| field.select_sql(data_source) }
+      group_fields        = fields.collect(&:group_sql).compact
       
-        sql = ["INSERT INTO #{table_name} (#{destination_fields.join(', ')})"]
-        sql<< "SELECT #{source_fields.join(', ')} FROM #{source_table_name}"
-        sql<< "WHERE #{self.class.conditions}" if apply_conditions?
-        sql<< "GROUP BY #{group_fields.join(', ')}" unless group_fields.empty?
-      
-        Base.connection.execute sql.join("\n")
+      sql= ["SELECT #{source_fields.join(', ')} FROM #{source_table_name}"]
+      sql<< "WHERE #{self.class.conditions}" if apply_conditions?
+      sql<< "GROUP BY #{group_fields.join(', ')}" unless group_fields.empty?
+      sql.join("\n")
+    end
+    
+    def field_factory(descriptor, options={})
+      fields << case descriptor = descriptor.to_s
+      when /(min|max|sum|avg)_(.*)/i : Operation.new $1, active_record.columns_hash[$2], options
+      when /count(er)?/i             : Counter.new options
+      else                             Dimension.new active_record.columns_hash[descriptor], options
       end
     end
     
@@ -211,11 +233,11 @@ module ActiveRecord
       @apply_conditions ||= self.class.conditions and (self.class.contingent_column_names - dimensions.collect(&:column_name)).empty?
     end
     
-    def prepare_table
+    def prepare_table!
       Base.connection.execute apply_conditions? ? "DELETE FROM #{table_name} WHERE #{self.class.conditions}" : "TRUNCATE TABLE #{table_name}"
     end
     
-    def create_table
+    def create_table!
       @apply_conditions = false
       Base.connection.create_table table_name, :id => false do |t|
         fields.each { |field| t.column field.column_alias, field.type, field.options }
@@ -225,7 +247,7 @@ module ActiveRecord
     def method_missing(method_id, *args)
       if active_record.column_names.include? method_id.to_s
         options = args.pop if args.last.is_a?(Hash)
-        fields << Dimension.new(active_record.columns_hash[method_id.to_s], options || {})
+        field_factory(method_id, options || {})
       else
         super
       end
