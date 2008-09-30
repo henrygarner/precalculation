@@ -12,9 +12,8 @@ module ActsAsPrecalculated
   module ClassMethods
     
     def calculate_with_precalculation(*args)
-      precalculation = ActiveRecord::Precalculation.defined_for self
-      if precalculation
-        precalculation.results args.flatten
+      if precalculation = ActiveRecord::Precalculation.defined_for(self)
+        precalculation.calculate args.flatten
       else
         calculate_without_precalculation *args
       end

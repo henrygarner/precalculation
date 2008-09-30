@@ -57,7 +57,7 @@ module ActiveRecord
         
         source = data_source.operations.detect do |field|
           field.column_name == column_name and
-          { :sum   => [:sum],
+          { :sum   => [:sum, :avg],
             :min   => [:min],
             :max   => [:max],
             :avg   => [:avg, :sum]
@@ -69,9 +69,11 @@ module ActiveRecord
         if operator == :avg
           return unless counter = data_source.counters.first
           case source.operator
-            when :sum then "SUM(#{source.column_alias}) / SUM(#{counter.column_alias}) AS #{column_alias}"
-            when :avg then "SUM(#{source.column_alias} * #{counter.column_alias}) / SUM(#{counter.column_alias}) AS #{column_alias}"
-          end
+            when :sum : "SUM(#{source.column_alias}) / SUM(#{counter.column_alias}) AS #{column_alias}"
+            when :avg : "SUM(#{source.column_alias} * #{counter.column_alias}) / SUM(#{counter.column_alias}) AS #{column_alias}" end
+        elsif [operator, source.operator] == [:sum, :avg]
+          return unless counter = data_source.counters.first
+          "SUM(#{source.column_alias} * #{counter.column_alias}) AS #{column_alias}"
         else
           "#{operator.to_s.upcase}(#{source.column_alias}) AS #{column_alias}"
         end
@@ -113,7 +115,7 @@ module ActiveRecord
     
     class << self
       attr_accessor :conditions, :contingent_column_names, :subclasses
-      def calculate(table_name, &block)
+      def precalculate(table_name, &block)
         calculations << returning(self.new(table_name, &block)) do |obj|
           yield obj
         end
@@ -141,9 +143,9 @@ module ActiveRecord
         subclasses.detect { |child| child.active_record == active_record }
       end
       
-      def results(*args)
+      def calculate(*args)
         request = self.new
-        args.flatten.each { |from_token| request.field_factory from_token }
+        args.flatten.each { |from_token| request.field from_token }
         active_record.connection.select_rows request.to_sql
       end
       
@@ -162,13 +164,13 @@ module ActiveRecord
     %w(sum min max avg).each do |operation|
       class_eval <<-EOV
         def #{operation}(column_name, options = {})
-          field_factory("#{operation}_\#\{column_name\}", options)
+          field("#{operation}_\#\{column_name\}", options)
         end
       EOV
     end
     
     def counter(options = {})
-      field_factory(:counter, options)
+      field(:counter, options)
     end
     alias_method :count, :counter
     
@@ -222,7 +224,7 @@ module ActiveRecord
       sql.join("\n")
     end
     
-    def field_factory(descriptor, options={})
+    def field(descriptor, options={})
       fields << case descriptor = descriptor.to_s
       when /(min|max|sum|avg)_(.*)/i : Operation.new $1, active_record.columns_hash[$2], options
       when /count(er)?/i             : Counter.new options
@@ -252,7 +254,7 @@ module ActiveRecord
     def method_missing(method_id, *args)
       if active_record.column_names.include? method_id.to_s
         options = args.pop if args.last.is_a?(Hash)
-        field_factory(method_id, options || {})
+        field(method_id, options || {})
       else
         super
       end
@@ -266,9 +268,7 @@ module ActiveRecord
       attr_accessor :precalculations
       
       def precalculate(precalculations_path, conditions)
-        Precalculation.subclasses.each do |precalculation|
-          precalculation.run!(conditions)
-        end
+        Precalculation.subclasses.each {|precalculation| precalculation.run!(conditions) }
       end
     
     end
