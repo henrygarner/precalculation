@@ -1,7 +1,4 @@
-# Include hook code here
-#require 'active_Record/precalculation.rb'
-Dir[File.join RAILS_ROOT, 'db', 'precalculate', '*.rb'].each do |file|
-  require file
-end 
+require 'active_record/precalculation.rb'
+Dir.glob(File.join(RAILS_ROOT, 'db', 'precalculate', '*.rb')).each {|f| require f }
 
 ActiveRecord::Base.class_eval { include ActsAsPrecalculated }

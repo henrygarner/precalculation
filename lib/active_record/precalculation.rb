@@ -5,7 +5,6 @@ module ActiveRecord
     class Field
       attr_accessor :column, :column_alias, :options
       def initialize(column, options={})
-        puts "Initializing: #{self.inspect}"
         @column_alias = options.delete :alias
         @column, @options = column, options.reverse_merge(:limit => column.limit, :precision => column.precision, :scale => column.scale)
       end
@@ -113,7 +112,7 @@ module ActiveRecord
     end
     
     class << self
-      attr_accessor :conditions, :contingent_column_names
+      attr_accessor :conditions, :contingent_column_names, :subclasses
       def calculate(table_name, &block)
         calculations << returning(self.new(table_name, &block)) do |obj|
           yield obj
@@ -127,22 +126,25 @@ module ActiveRecord
       def run!(conditions)
         @conditions = conditions
         @contingent_column_names = conditions.to_s.scan(Regexp.new("(#{active_record.column_names.join('|')})", true)).flatten
-        
         calculations.sort { |one,another| one.phase <=> another.phase }.each(&:run!)
       end
       
+      def subclasses
+        @subclasses ||= []
+      end
+      
       def inherited(child)
-        (@subclasses ||= []) << child
+        subclasses << child
       end
       
       def defined_for(active_record)
-        @subclasses.detect { |child| child.active_record == active_record }
+        subclasses.detect { |child| child.active_record == active_record }
       end
       
       def results(*args)
         request = self.new
         args.flatten.each { |from_token| request.field_factory from_token }
-        active_record.find_by_sql request.to_sql
+        active_record.connection.select_rows request.to_sql
       end
       
     end
@@ -204,6 +206,7 @@ module ActiveRecord
     def run!
       active_record.transaction do
         Base.connection.table_exists?(table_name) ? prepare_table! : create_table!
+        puts "Calculating from '#{(data_source || active_record).table_name}'"
         Base.connection.execute "INSERT INTO #{table_name} (#{fields.collect(&:column_alias).join(', ')})\n#{self.to_sql}"
       end
     end
@@ -234,10 +237,12 @@ module ActiveRecord
     end
     
     def prepare_table!
+      puts "Preparing '#{table_name}'"
       Base.connection.execute apply_conditions? ? "DELETE FROM #{table_name} WHERE #{self.class.conditions}" : "TRUNCATE TABLE #{table_name}"
     end
     
     def create_table!
+      puts "Creating '#{table_name}'"
       @apply_conditions = false
       Base.connection.create_table table_name, :id => false do |t|
         fields.each { |field| t.column field.column_alias, field.type, field.options }
@@ -261,10 +266,7 @@ module ActiveRecord
       attr_accessor :precalculations
       
       def precalculate(precalculations_path, conditions)
-        files = Dir["#{precalculations_path}/*.rb"]
-        files.collect do |file|
-          load(file)
-          precalculation = file.match(/([_a-z0-9]*).rb/)[1].classify.constantize
+        Precalculation.subclasses.each do |precalculation|
           precalculation.run!(conditions)
         end
       end
