@@ -239,9 +239,9 @@ module ActiveRecord
     end
     
     def field(descriptor, options={})
-      fields << case descriptor = descriptor.to_s
-      when /(min|max|sum|avg)_(.*)/i       : Operation.new $1, active_record.columns_hash[$2], options
-      when /count_(.*)/i                   : Count.new active_record.columns_hash[$1], options
+      fields << case descriptor = descriptor.to_s.downcase
+      when /^(min|max|sum|avg)_([\w_]+)$/  : Operation.new $1, active_record.columns_hash[$2], options
+      when /^count_([\w_]+)$/              : Count.new active_record.columns_hash[$1], options
       when 'counter'                       : Counter.new options
       else                                   Dimension.new active_record.columns_hash[descriptor], options
       end
