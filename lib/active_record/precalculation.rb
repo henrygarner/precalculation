@@ -89,6 +89,21 @@ module ActiveRecord
       
     end
     
+    class Count < Operation
+      
+      def initialize(column, options = {})
+        super(:count, column, options)
+      end
+      
+      def select_sql(data_source = nil)
+        return "COUNT(DISTINCT #{column_name}) AS #{column_alias}" unless data_source
+        if source = data_source.dimensions.detect { |dimension| dimension.column_name == column_name}
+          "COUNT(DISTINCT #{source.column_alias}) AS #{column_alias}"
+        end
+      end
+
+    end
+    
     class Counter
       attr_accessor :options
       def initialize(options = {})
@@ -161,7 +176,7 @@ module ActiveRecord
       @fields ||= []
     end
   
-    %w(sum min max avg).each do |operation|
+    %w(sum min max avg count).each do |operation|
       class_eval <<-EOV
         def #{operation}(column_name, options = {})
           field("#{operation}_\#\{column_name\}", options)
@@ -172,7 +187,6 @@ module ActiveRecord
     def counter(options = {})
       field(:counter, options)
     end
-    alias_method :count, :counter
     
     def self.active_record
       self.inspect =~ (/([A-Z][a-zA-Z]+)Precalculation/)
@@ -218,7 +232,7 @@ module ActiveRecord
       source_fields       = fields.collect { |field| field.select_sql(data_source) }
       group_fields        = fields.collect(&:group_sql).compact
       
-      sql= ["SELECT #{source_fields.join(', ')} FROM #{source_table_name}"]
+      sql= ["SELECT #{source_fields.join(', ')}\nFROM #{source_table_name}"]
       sql<< "WHERE #{self.class.conditions}" if apply_conditions?
       sql<< "GROUP BY #{group_fields.join(', ')}" unless group_fields.empty?
       sql.join("\n")
@@ -226,9 +240,10 @@ module ActiveRecord
     
     def field(descriptor, options={})
       fields << case descriptor = descriptor.to_s
-      when /(min|max|sum|avg)_(.*)/i : Operation.new $1, active_record.columns_hash[$2], options
-      when /count(er)?/i             : Counter.new options
-      else                             Dimension.new active_record.columns_hash[descriptor], options
+      when /(min|max|sum|avg)_(.*)/i       : Operation.new $1, active_record.columns_hash[$2], options
+      when /count_(.*)/i                   : Count.new active_record.columns_hash[$1], options
+      when 'counter'                       : Counter.new options
+      else                                   Dimension.new active_record.columns_hash[descriptor], options
       end
     end
     
