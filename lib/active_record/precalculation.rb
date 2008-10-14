@@ -122,7 +122,7 @@ module ActiveRecord
       def column_alias
         @column_alias || "#{operator}_distinct_#{column_name}"
       end
-
+      
     end
     
     class Counter
@@ -328,6 +328,7 @@ module ActiveRecord
       def precalculate(precalculations_path, conditions)
         Precalculation.subclasses.each {|precalculation| precalculation.run!(conditions) }
       end
+
     end
   end
   
