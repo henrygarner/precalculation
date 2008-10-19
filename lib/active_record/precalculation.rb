@@ -36,6 +36,12 @@ module ActiveRecord
         super || column_name
       end
       
+      def to_config
+        options = ''
+        options += " :alias => '#{column_alias}'" if column_alias != column_name
+        "    #{column_name}" + options
+      end
+      
       protected
       
       def source_column(data_source)
@@ -103,6 +109,10 @@ module ActiveRecord
         @column_alias || "#{operator}_#{column_name}"
       end
       
+      def to_config
+        "    #{operator} :#{column_name}, :alias => '#{column_alias}'"
+      end
+      
     end
     
     class DistinctOperation < Operation
@@ -121,6 +131,10 @@ module ActiveRecord
       
       def column_alias
         @column_alias || "#{operator}_distinct_#{column_name}"
+      end
+      
+      def to_config
+        "    #{operator}_distinct :#{column_name}, :alias => '#{column_alias}'"
       end
       
     end
@@ -144,6 +158,9 @@ module ActiveRecord
       end
       def type
         :integer
+      end
+      def to_config
+        "    counter :alias => '#{column_alias}'"
       end
     end
     
@@ -275,6 +292,15 @@ module ActiveRecord
       sql<< "WHERE #{self.class.conditions}" if apply_conditions?
       sql<< "GROUP BY #{group_fields.join(', ')}" unless group_fields.empty?
       sql.join("\n")
+    end
+    
+    def to_config
+      out = ["  precalculate '#{table_name}' do"]
+      fields.each do |field|
+        out << field.to_config
+      end
+      out << "  end\n"
+      out.join("\n")
     end
     
     def field(descriptor, options={})

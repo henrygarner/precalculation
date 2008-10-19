@@ -11,6 +11,11 @@ h2. Install
 	</code>
 </pre>
 
+h2. Abstract
+
+Precalculation defines a set of tables which contain data calculated from a single base table.
+Only columns available in the base table are allowed to be specified in a precalculation.
+
 
 h2. Usage
 
@@ -20,13 +25,13 @@ h2. Usage
 	</code>
 </pre>
 
-This will create the db/precalculation directory and a boilerplate class inheriting from ActiveRecord::Precalculation.
+This will create the db/precalculate directory and a boilerplate class inheriting from ActiveRecord::Precalculation.
 
 Next, define your precalculations. You can define as many as you wish.
 
 <pre>
 	<code>
-		# Defined in db/precalculation/my_model_precalculation.rb
+		# Defined in db/precalculate/my_model_precalculation.rb
 		
 		class MyModelPrecalculation < ActiveRecord::Precalculation
 		
@@ -52,7 +57,33 @@ Next, define your precalculations. You can define as many as you wish.
 	</code>
 </pre>
 
-Next, run your precalculations.
+If you prefer, you can use a command-line helper to walk you through creating the precalculations.
+
+<pre>
+	<code>
+		rake precalculate:config:edit
+	</code>
+</pre>
+
+Running the above from the root of your application will initiate the helper.
+Following the onscreen instructions will generate a well-formed precalculation declaration.
+
+h2. Precalculation Versioning
+
+Precalculation will look for all .rb files in the db/precalculate directory when the plugin is initialized. If the db/precalculate directory a Git repository, Precalculation will load the last committed versions of each .rb file. This ensures it is possible to make changes to your Precalculations without them taking effect the next time your app is rebooted. When you are happy to commit all your precalculations to the repository, you can invoke 
+
+<pre>
+	<code>
+		rake precalculate:config:commit
+	</code>
+</pre>
+
+Your new precalculations will then be available next time you reboot your app.
+
+
+h2. Precalculating
+
+Having defined precalculations, you can run them.
 
 <pre>
 	<code>
@@ -64,6 +95,8 @@ Next, run your precalculations.
 </pre>
 
 The above code will create or update the tables specified in the classes inheriting from ActiveRecord::Precalculation you define. If conditions are supplied, they will be applied to tables which understand them. Other tables (or those which are being created for the first time) will not have conditions applied.
+
+h2. Getting data
 
 The model class you have applied precalculations to is smart enough to know about the aggregate table stack. When @calculate@ is called, the Precalculation module will check to see if the query can be satisfied by any of the aggregate tables. If it can, then the neccessary SQL will be executed on the aggregate table instead of the base.
 
